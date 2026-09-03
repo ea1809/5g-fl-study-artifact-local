@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ueransim-ue-lifecycle-edge2
+  namespace: open5gs-core
+  labels:
+    app: ueransim
+    component: ue-lifecycle
+    edge: edge2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ueransim
+      component: ue-lifecycle
+      edge: edge2
+  template:
+    metadata:
+      labels:
+        app: ueransim
+        component: ue-lifecycle
+        edge: edge2
+    spec:
+      nodeSelector:
+        edge-role: edge
+      containers:
+      - name: ue-lifecycle
+        image: ueransim-tools:v3.2.6
+        command: ["/bin/bash", "-c", "--"]
+        args: ["/ueransim/config/wrapper.sh"]
+        securityContext:
+          capabilities:
+            add: ["NET_ADMIN"]
+        volumeMounts:
+        - name: ue-volume
+          mountPath: /ueransim/config
+      volumes:
+      - name: ue-volume
+        configMap:
+          name: ue-lifecycle-edge2-configmap
+          defaultMode: 0755

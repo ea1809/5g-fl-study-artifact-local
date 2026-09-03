@@ -1,0 +1,178 @@
+---
+- name: Setup Open5GS core network with cloud/edge split
+  hosts: master_nodes
+  become: yes
+  gather_facts: yes
+
+  vars:
+    kubeconfig_path: "/home/{{ ansible_user }}/.kube/config"
+
+    open5gs_chart_ref: "oci://registry-1.docker.io/gradiantcharts/open5gs"
+    open5gs_chart_version: "2.3.4"
+
+    namespaces:
+      - open5gs-core
+      - open5gs-cloud
+      - open5gs-edge
+
+  tasks:
+    - name: Remove generated ubuntu hosts
+      lineinfile:
+        path: /etc/hosts
+        regexp: "ubuntu-*"
+        state: absent
+        backup: yes
+
+    - name: Remove generated hosts
+      lineinfile:
+        path: /etc/hosts
+        regexp: ".* {{ hostvars[item]['ansible_hostname']}} {{ hostvars[item]['ansible_hostname']}}"
+        state: absent
+        backup: yes
+      loop: "{{ ansible_play_batch }}"
+
+    - name: Update hosts
+      lineinfile:
+        path: /etc/hosts
+        regexp: ".*\t{{ hostvars[item]['ansible_hostname']}}\t{{ hostvars[item]['ansible_hostname']}}$"
+        line: "{{ hostvars[item]['ansible_ssh_host'] }}\t{{ hostvars[item]['ansible_hostname']}}\t{{ hostvars[item]['ansible_hostname']}}.local"
+        state: present
+        backup: yes
+      loop: "{{ ansible_play_batch }}"
+
+    - name: Check if helm is already installed
+      command: helm version --short
+      register: helm_check
+      ignore_errors: true
+      changed_when: false
+
+    - name: Download Helm installer script
+      command: curl -fsSL -o /tmp/get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+      when: helm_check.rc != 0
+
+    - name: Set executable permissions for Helm installer script
+      file:
+        path: /tmp/get_helm.sh
+        mode: "0755"
+      when: helm_check.rc != 0
+
+    - name: Run Helm installer script
+      command: /tmp/get_helm.sh
+      when: helm_check.rc != 0
+
+    - name: Install python3-pip
+      apt:
+        name: python3-pip
+        state: present
+        update_cache: yes
+
+    - name: Install Kubernetes Python client
+      pip:
+        name: kubernetes
+        executable: pip3
+
+    - name: Create namespaces
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ item }}"
+      loop: "{{ namespaces }}"
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+
+    - name: Install shared Open5GS core
+      kubernetes.core.helm:
+        chart_ref: "{{ open5gs_chart_ref }}"
+        chart_version: "{{ open5gs_chart_version }}"
+        release_namespace: open5gs-core
+        release_name: open5gs-core
+        create_namespace: true
+        values:
+          mongodb:
+            architecture: standalone
+            auth:
+              enabled: false
+            persistence:
+              enabled: false
+
+          amf:
+            enabled: false
+
+          smf:
+            enabled: false
+
+          upf:
+            enabled: false
+
+          pcrf:
+            enabled: false
+
+          mme:
+            enabled: false
+
+          hss:
+            enabled: false
+
+          sgwc:
+            image:
+              tag: "2.7.7"
+
+          sgwu:
+            image:
+              tag: "2.7.7"
+
+          nrf:
+            image:
+              tag: "2.7.7"
+            customOpen5gsConfig: "{{ lookup('ansible.builtin.file', 'files/nrf-core.yaml') | from_yaml }}"
+
+          scp:
+            image:
+              tag: "2.7.7"
+            customOpen5gsConfig: "{{ lookup('ansible.builtin.file', 'files/scp-core.yaml') | from_yaml }}"
+
+          ausf:
+            image:
+              tag: "2.7.7"
+            customOpen5gsConfig: "{{ lookup('ansible.builtin.file', 'files/ausf-core.yaml') | from_yaml }}"
+
+          udm:
+            image:
+              tag: "2.7.7"
+            customOpen5gsConfig: "{{ lookup('ansible.builtin.file', 'files/udm-core.yaml') | from_yaml }}"
+
+          udr:
+            image:
+              tag: "2.7.7"
+            customOpen5gsConfig: "{{ lookup('ansible.builtin.file', 'files/udr-core.yaml') | from_yaml }}"
+
+          nssf:
+            image:
+              tag: "2.7.7"
+            config:
+              nsiList:
+                - sst: 1
+                  sd: "000001"
+                - sst: 1
+                  sd: "000002"
+
+          bsf:
+            image:
+              tag: "2.7.7"
+
+          pcf:
+            image:
+              tag: "2.7.7"
+
+          sepp:
+            image:
+              tag: "2.7.7"
+
+          webui:
+            image:
+              tag: "2.7.7"
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"

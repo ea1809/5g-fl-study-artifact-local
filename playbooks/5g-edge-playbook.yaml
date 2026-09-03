@@ -1,0 +1,90 @@
+---
+- name: Deploy static 5G dataplane components
+  hosts: master_nodes
+  become: yes
+  gather_facts: yes
+
+  vars:
+    kubeconfig_path: "/home/{{ ansible_user }}/.kube/config"
+
+    manifests:
+      # =========================
+      # CORE
+      # =========================
+      - { src: "files/5g-static/open5gs-core/amf-configmap.yaml",   dest: "/tmp/amf-configmap.yaml",   namespace: "open5gs-core" }
+      - { src: "files/5g-static/open5gs-core/amf-deployment.yaml",  dest: "/tmp/amf-deployment.yaml",  namespace: "open5gs-core" }
+      - { src: "files/5g-static/open5gs-core/amf-service.yaml",     dest: "/tmp/amf-service.yaml",     namespace: "open5gs-core" }
+
+      # =========================
+      # gNB EDGE 1
+      # =========================
+      - { src: "files/5g-static/open5gs-core/gnb-configmap.yaml",   dest: "/tmp/gnb-edge1-configmap.yaml",   namespace: "open5gs-core" }
+      - { src: "files/5g-static/open5gs-core/gnb-deployment.yaml",  dest: "/tmp/gnb-edge1-deployment.yaml",  namespace: "open5gs-core" }
+      - { src: "files/5g-static/open5gs-core/gnb-service.yaml",     dest: "/tmp/gnb-edge1-service.yaml",     namespace: "open5gs-core" }
+
+      # =========================
+      # gNB EDGE 2
+      # =========================
+      - { src: "files/5g-static/open5gs-core/gnb2-configmap.yaml",   dest: "/tmp/gnb-edge2-configmap.yaml",   namespace: "open5gs-core" }
+      - { src: "files/5g-static/open5gs-core/gnb2-deployment.yaml",  dest: "/tmp/gnb-edge2-deployment.yaml",  namespace: "open5gs-core" }
+      - { src: "files/5g-static/open5gs-core/gnb2-service.yaml",     dest: "/tmp/gnb-edge2-service.yaml",     namespace: "open5gs-core" }
+
+      # =========================
+      # UE LIFECYCLE - CLOUD (IMSIs 001-010)
+      # =========================
+      - { src: "files/5g-static/open5gs-core/ue-lifecycle-cloud-configmap.yaml",  dest: "/tmp/ue-lifecycle-cloud-configmap.yaml",  namespace: "open5gs-core" }
+      - { src: "files/5g-static/open5gs-core/ue-lifecycle-cloud-deployment.yaml", dest: "/tmp/ue-lifecycle-cloud-deployment.yaml", namespace: "open5gs-core" }
+
+      # =========================
+      # UE LIFECYCLE - EDGE 1 (IMSIs 011-030)
+      # =========================
+      - { src: "files/5g-static/open5gs-core/ue-lifecycle-edge1-configmap.yaml",  dest: "/tmp/ue-lifecycle-edge1-configmap.yaml",  namespace: "open5gs-core" }
+      - { src: "files/5g-static/open5gs-core/ue-lifecycle-edge1-deployment.yaml", dest: "/tmp/ue-lifecycle-edge1-deployment.yaml", namespace: "open5gs-core" }
+
+      # =========================
+      # UE LIFECYCLE - EDGE 2 (IMSIs 031-050)
+      # =========================
+      - { src: "files/5g-static/open5gs-core/ue-lifecycle-edge2-configmap.yaml",  dest: "/tmp/ue-lifecycle-edge2-configmap.yaml",  namespace: "open5gs-core" }
+      - { src: "files/5g-static/open5gs-core/ue-lifecycle-edge2-deployment.yaml", dest: "/tmp/ue-lifecycle-edge2-deployment.yaml", namespace: "open5gs-core" }
+
+      # =========================
+      # CLOUD
+      # =========================
+      - { src: "files/5g-static/open5gs-cloud/smf-configmap.yaml",   dest: "/tmp/smf-cloud-configmap.yaml",   namespace: "open5gs-cloud" }
+      - { src: "files/5g-static/open5gs-cloud/smf-deployment.yaml",  dest: "/tmp/smf-cloud-deployment.yaml",  namespace: "open5gs-cloud" }
+      - { src: "files/5g-static/open5gs-cloud/smf-service.yaml",     dest: "/tmp/smf-cloud-service.yaml",     namespace: "open5gs-cloud" }
+
+      - { src: "files/5g-static/open5gs-cloud/upf-configmap.yaml",   dest: "/tmp/upf-cloud-configmap.yaml",   namespace: "open5gs-cloud" }
+      - { src: "files/5g-static/open5gs-cloud/upf-deployment.yaml",  dest: "/tmp/upf-cloud-deployment.yaml",  namespace: "open5gs-cloud" }
+
+      # =========================
+      # EDGE 1
+      # =========================
+      - { src: "files/5g-static/open5gs-edge/smf2-configmap.yaml",   dest: "/tmp/smf2-configmap.yaml",   namespace: "open5gs-edge" }
+      - { src: "files/5g-static/open5gs-edge/smf2-deployment.yaml",  dest: "/tmp/smf2-deployment.yaml",  namespace: "open5gs-edge" }
+      - { src: "files/5g-static/open5gs-edge/smf2-service.yaml",     dest: "/tmp/smf2-service.yaml",     namespace: "open5gs-edge" }
+
+      - { src: "files/5g-static/open5gs-edge/upf2-configmap.yaml",   dest: "/tmp/upf2-configmap.yaml",   namespace: "open5gs-edge" }
+      - { src: "files/5g-static/open5gs-edge/upf2-deployment.yaml",  dest: "/tmp/upf2-deployment.yaml",  namespace: "open5gs-edge" }
+
+      # =========================
+      # EDGE 2
+      # =========================
+      - { src: "files/5g-static/open5gs-edge/smf3-configmap.yaml",   dest: "/tmp/smf3-configmap.yaml",   namespace: "open5gs-edge" }
+      - { src: "files/5g-static/open5gs-edge/smf3-deployment.yaml",  dest: "/tmp/smf3-deployment.yaml",  namespace: "open5gs-edge" }
+      - { src: "files/5g-static/open5gs-edge/smf3-service.yaml",     dest: "/tmp/smf3-service.yaml",     namespace: "open5gs-edge" }
+
+      - { src: "files/5g-static/open5gs-edge/upf3-configmap.yaml",   dest: "/tmp/upf3-configmap.yaml",   namespace: "open5gs-edge" }
+      - { src: "files/5g-static/open5gs-edge/upf3-deployment.yaml",  dest: "/tmp/upf3-deployment.yaml",  namespace: "open5gs-edge" }
+
+  tasks:
+    - name: Copy manifests to master
+      copy:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        mode: "0644"
+      loop: "{{ manifests }}"
+
+    - name: Apply manifests
+      command: kubectl apply -f {{ item.dest }} -n {{ item.namespace }} --kubeconfig={{ kubeconfig_path }}
+      loop: "{{ manifests }}"

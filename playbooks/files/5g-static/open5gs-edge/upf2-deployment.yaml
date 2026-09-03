@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: open5gs-upf2
+  namespace: open5gs-edge
+  labels:
+    app: open5gs
+    nf: upf
+    name: upf2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: open5gs
+      nf: upf
+      name: upf2
+  template:
+    metadata:
+      labels:
+        app: open5gs
+        nf: upf
+        name: upf2
+      annotations:
+        k8s.v1.cni.cncf.io/networks: '[
+          { "name": "n3network", "interface": "n3", "ips": [ "10.10.3.2/24" ] },
+          { "name": "n4network", "interface": "n4", "ips": [ "10.10.4.2/24" ] }
+        ]'
+    spec:
+      nodeSelector:
+        edge-role: edge
+      initContainers:
+        - name: wait-smf
+          image: busybox:1.32.0
+          env:
+            - name: DEPENDENCIES
+              value: smf2-nsmf.open5gs-edge.svc.cluster.local:7777
+          command:
+            - sh
+            - -c
+            - until nc -z $DEPENDENCIES; do echo waiting for SMF; sleep 2; done;
+      containers:
+        - name: upf
+          image: docker.io/gradiant/open5gs:2.7.7
+          imagePullPolicy: Always
+          command: ["/open5gs/config/wrapper.sh"]
+          volumeMounts:
+            - mountPath: /open5gs/config/
+              name: upf-volume
+            - mountPath: /dev/net/tun
+              name: tun-device
+          ports:
+            - name: pfcp
+              containerPort: 8805
+              protocol: UDP
+            - name: gtpu
+              containerPort: 2152
+              protocol: UDP
+          securityContext:
+            privileged: true
+            runAsUser: 0
+            runAsGroup: 0
+            allowPrivilegeEscalation: true
+            capabilities:
+              add:
+                - NET_ADMIN
+          volumeMounts:
+            - mountPath: /open5gs/config/
+              name: upf-volume
+            - mountPath: /dev/net/tun
+              name: tun-device
+      restartPolicy: Always
+      volumes:
+        - name: upf-volume
+          configMap:
+            name: upf2-configmap
+            items:
+              - key: upfcfg.yaml
+                path: upf.yaml
+              - key: wrapper.sh
+                path: wrapper.sh
+                mode: 0777
+        - name: tun-device
+          hostPath:
+            path: /dev/net/tun
+            type: CharDevice

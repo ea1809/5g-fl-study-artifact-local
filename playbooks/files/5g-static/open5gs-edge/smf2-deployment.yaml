@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: open5gs-smf2
+  namespace: open5gs-edge
+  labels:
+    app: open5gs
+    nf: smf
+    name: smf2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: open5gs
+      nf: smf
+      name: smf2
+  template:
+    metadata:
+      labels:
+        app: open5gs
+        nf: smf
+        name: smf2
+      annotations:
+        k8s.v1.cni.cncf.io/networks: '[
+          { "name": "n4network", "interface": "n4", "ips": [ "10.10.4.102/24" ] },
+          { "name": "n3network", "interface": "n3", "ips": [ "10.10.3.102/24" ] }
+        ]'
+    spec:
+      nodeSelector:
+        edge-role: edge
+      initContainers:
+        - name: wait-ausf
+          image: busybox:1.32.0
+          env:
+            - name: DEPENDENCIES
+              value: open5gs-core-ausf-sbi.open5gs-core.svc.cluster.local:7777
+          command:
+            - sh
+            - -c
+            - until nc -z $DEPENDENCIES; do echo waiting for AUSF; sleep 2; done;
+      containers:
+        - name: smf
+          image: docker.io/gradiant/open5gs:2.7.7
+          imagePullPolicy: Always
+          command: ["open5gs-smfd"]
+          args: ["-c", "/open5gs/config/smf.yaml"]
+          env:
+            - name: GIN_MODE
+              value: release
+          ports:
+            - name: nsmf
+              containerPort: 7777
+            - name: pfcp
+              containerPort: 8805
+              protocol: UDP
+          volumeMounts:
+            - mountPath: /open5gs/config/
+              name: smf-volume
+          securityContext:
+            capabilities:
+              add: ["NET_ADMIN"]
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      volumes:
+        - name: smf-volume
+          projected:
+            sources:
+              - configMap:
+                  name: smf2-configmap
+                  items:
+                    - key: smfcfg.yaml
+                      path: smf.yaml

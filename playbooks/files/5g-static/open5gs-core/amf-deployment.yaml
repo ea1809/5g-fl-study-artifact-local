@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: open5gs-amf
+  namespace: open5gs-core
+  labels:
+    app: open5gs
+    nf: amf
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: open5gs
+      nf: amf
+  template:
+    metadata:
+      labels:
+        app: open5gs
+        nf: amf
+      annotations:
+        k8s.v1.cni.cncf.io/networks: '[
+          { "name": "n3network", "interface": "n3", "ips": [ "10.10.3.200/24" ] }
+        ]'
+    spec:
+      nodeSelector:
+        edge-role: cloud
+      initContainers:
+        - name: wait-scp
+          image: busybox:1.32.0
+          env:
+            - name: DEPENDENCIES
+              value: open5gs-core-scp-sbi.open5gs-core.svc.cluster.local:7777
+          command:
+            - sh
+            - -c
+            - until nc -z $DEPENDENCIES; do echo waiting for SCP; sleep 2; done;
+      containers:
+        - name: amf
+          image: docker.io/gradiant/open5gs:2.7.7
+          imagePullPolicy: IfNotPresent
+          command: ["open5gs-amfd"]
+          args: ["-c", "/open5gs/config/amf.yaml"]
+          env:
+            - name: GIN_MODE
+              value: release
+          ports:
+            - name: sbi
+              containerPort: 7777
+            - name: metrics
+              containerPort: 9090
+            - name: n2
+              containerPort: 38412
+              protocol: SCTP
+          volumeMounts:
+            - mountPath: /open5gs/config/
+              name: amf-volume
+          securityContext:
+            capabilities:
+              add: ["NET_ADMIN"]
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      volumes:
+        - name: amf-volume
+          projected:
+            sources:
+              - configMap:
+                  name: amf-configmap
+                  items:
+                    - key: amfcfg.yaml
+                      path: amf.yaml

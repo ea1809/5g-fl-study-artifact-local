@@ -1,0 +1,8 @@
+output/
+*.pcap
+*.pcapng
+ueransim-images-v3.2.6.tar
+__pycache__/
+*.pyc
+*.log
+.DS_Store

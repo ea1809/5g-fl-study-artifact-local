@@ -1,0 +1,13 @@
+[Unit]
+Description=UE HTTP traffic server - web-heavy
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/ue-http-medium
+ExecStart=/usr/bin/python3 -m http.server 8082 --bind 0.0.0.0
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

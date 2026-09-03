@@ -1,0 +1,69 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: smf1-configmap
+  namespace: open5gs-cloud
+data:
+  smfcfg.yaml: |
+    logger:
+      file:
+        path: /opt/open5gs/var/log/open5gs/smf.log
+      level: info
+
+    global:
+      max:
+        ue: 1024
+
+    smf:
+      sbi:
+        server:
+          - dev: eth0
+            advertise: smf1-nsmf.open5gs-cloud.svc.cluster.local
+            port: 7777
+        client:
+          scp:
+            - uri: http://open5gs-core-scp-sbi.open5gs-core.svc.cluster.local:7777
+
+      pfcp:
+        server:
+          - dev: n4
+        client:
+          upf:
+            - address: 10.10.4.1
+              dnn: internet
+
+      gtpc:
+        server:
+          - dev: eth0
+
+      gtpu:
+        server:
+          - dev: n3
+
+      metrics:
+        server:
+          - address: 0.0.0.0
+            port: 9090
+
+      session:
+        - dnn: internet
+          gateway: 10.45.0.1
+          subnet: 10.45.0.0/16
+
+      dns:
+        - 8.8.8.8
+        - 8.8.4.4
+        - 2001:4860:4860::8888
+        - 2001:4860:4860::8844
+
+      mtu: 1400
+
+      ctf:
+        enabled: auto
+
+      info:
+        - s_nssai:
+            - sst: 1
+              sd: 000001
+              dnn:
+                - internet

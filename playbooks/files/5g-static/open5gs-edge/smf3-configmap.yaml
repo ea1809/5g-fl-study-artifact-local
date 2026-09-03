@@ -1,0 +1,68 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: smf3-configmap
+  namespace: open5gs-edge
+data:
+  smfcfg.yaml: |
+    logger:
+      file:
+        path: /opt/open5gs/var/log/open5gs/smf.log
+      level: info
+
+    global:
+      max:
+        ue: 1024
+
+    smf:
+      sbi:
+        server:
+          - dev: eth0
+            advertise: smf3-nsmf.open5gs-edge.svc.cluster.local
+            port: 7777
+        client:
+          scp:
+            - uri: http://open5gs-core-scp-sbi.open5gs-core.svc.cluster.local:7777
+
+      pfcp:
+        server:
+          - dev: n4
+        client:
+          upf:
+            - address: 10.10.4.3
+
+      gtpc:
+        server:
+          - dev: eth0
+
+      gtpu:
+        server:
+          - dev: n3
+
+      metrics:
+        server:
+          - address: 0.0.0.0
+            port: 9090
+
+      session:
+        - dnn: edge2
+          gateway: 10.56.0.1
+          subnet: 10.56.0.0/16
+
+      dns:
+        - 8.8.8.8
+        - 8.8.4.4
+        - 2001:4860:4860::8888
+        - 2001:4860:4860::8844
+
+      mtu: 1400
+
+      ctf:
+        enabled: auto
+
+      info:
+        - s_nssai:
+            - sst: 1
+              sd: 000002
+              dnn:
+                - edge2

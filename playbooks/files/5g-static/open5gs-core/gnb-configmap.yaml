@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gnb-edge1-configmap
+  namespace: open5gs-core
+data:
+  wrapper.sh: |
+    #!/bin/bash
+    set -e
+
+    ETH0_IP=$(ip -4 addr show eth0 | awk '/inet / {print $2}' | cut -d/ -f1)
+    N3_IP=$(ip -4 addr show n3 | awk '/inet / {print $2}' | cut -d/ -f1)
+
+    cat > /tmp/open5gs-gnb.yaml <<EOF
+    mcc: '999'
+    mnc: '70'
+
+    nci: '0x000000011'
+    idLength: 32
+    tac: 1
+
+    linkIp: ${ETH0_IP}
+    ngapIp: ${N3_IP}
+    gtpIp: ${N3_IP}
+
+    amfConfigs:
+      - address: 10.10.3.200
+        port: 38412
+
+    slices:
+      - sst: 1
+        sd: 000001
+      - sst: 1
+        sd: 000002
+
+    ignoreStreamIds: true
+    EOF
+
+    echo "=== Generated gNB edge1 config ==="
+    cat /tmp/open5gs-gnb.yaml
+
+    exec /ueransim/nr-gnb --config /tmp/open5gs-gnb.yaml

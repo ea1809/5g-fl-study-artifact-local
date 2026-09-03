@@ -1,0 +1,107 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ue-lifecycle-cloud-configmap
+  namespace: open5gs-core
+data:
+  ue-lifecycle-cloud.yaml: |
+    supi: 'imsi-999700000000001'
+    mcc: '999'
+    mnc: '70'
+    key: '465B5CE8B199B49FAA5F0A2EE238A6BC'
+    op: 'E8ED289DEBA952E4283B54E88E6183CA'
+    opType: 'OPC'
+    amf: '8000'
+    imei: '356938035643801'
+    imeiSv: '4370816125816151'
+    gnbSearchList:
+      - gnb-edge1-service
+    uacAic:
+      mps: false
+      mcs: false
+    uacAcc:
+      normalClass: 0
+      class11: false
+      class12: false
+      class13: false
+      class14: false
+      class15: false
+    sessions:
+      - type: 'IPv4'
+        apn: 'internet'
+        slice:
+          sst: 1
+          sd: 000001
+    configured-nssai:
+      - sst: 1
+        sd: 000001
+    default-nssai:
+      - sst: 1
+        sd: 000001
+    integrity:
+      IA1: true
+      IA2: true
+      IA3: true
+    ciphering:
+      EA1: true
+      EA2: true
+      EA3: true
+    integrityMaxRate:
+      uplink: 'full'
+      downlink: 'full'
+
+  lifecycle.sh: |
+    #!/bin/bash
+    # IMSIs cloud : 001 à 010
+    BASE_IMSI=1
+    MAX_IMSI=10
+    CONFIG="/ueransim/config/ue-lifecycle-cloud.yaml"
+    LOG="/tmp/nr-ue.log"
+
+    cleanup() {
+        echo "[LIFECYCLE] Arrêt propre — kill tous les nr-ue..."
+        pkill -TERM -f "/ueransim/nr-ue" 2>/dev/null || true
+        exit 0
+    }
+    trap cleanup SIGTERM SIGINT
+
+    ue_loop() {
+        local imsi_num=$1
+        local imsi=$(printf "imsi-99970000000%04d" $imsi_num)
+        local pid=""
+
+        local initial_delay=$(( RANDOM % 120 ))
+        sleep "$initial_delay"
+
+        while true; do
+            local online_time=$(( RANDOM % 300 + 120 ))
+            local offline_time=$(( RANDOM % 90 + 10 ))
+            local jitter=$(( RANDOM % 30 ))
+
+            /ueransim/nr-ue -c "$CONFIG" -i "$imsi" -n 1 >> "$LOG" 2>&1 &
+            pid=$!
+            echo "[LIFECYCLE] $imsi démarré PID=$pid online=${online_time}s"
+
+            sleep "$online_time"
+
+            kill "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+            echo "[LIFECYCLE] $imsi arrêté offline=$((offline_time + jitter))s"
+
+            sleep $(( offline_time + jitter ))
+        done
+    }
+
+    echo "[LIFECYCLE] Démarrage de $(( MAX_IMSI - BASE_IMSI + 1 )) workers indépendants..."
+    for imsi_num in $(seq "$BASE_IMSI" "$MAX_IMSI"); do
+        ue_loop "$imsi_num" &
+    done
+
+    wait
+
+  wrapper.sh: |
+    #!/bin/bash
+    set -e
+    mkdir -p /dev/net
+    [ -e /dev/net/tun ] || mknod /dev/net/tun c 10 200
+    exec /bin/bash /ueransim/config/lifecycle.sh

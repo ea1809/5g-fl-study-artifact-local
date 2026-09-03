@@ -1,0 +1,15 @@
+logger:
+  file:
+    path: /opt/open5gs/var/log/open5gs/udm.log
+
+udm:
+  sbi:
+    server:
+      - address: 0.0.0.0
+        port: 7777
+        advertise: open5gs-core-udm-sbi.open5gs-core.svc.cluster.local
+    client:
+      scp:
+        - uri: http://open5gs-core-scp-sbi.open5gs-core.svc.cluster.local:7777
+      nrf:
+        - uri: http://open5gs-core-nrf-sbi.open5gs-core.svc.cluster.local:7777

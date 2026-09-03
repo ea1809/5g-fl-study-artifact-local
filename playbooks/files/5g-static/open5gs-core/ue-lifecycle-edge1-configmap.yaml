@@ -1,0 +1,219 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ue-lifecycle-edge1-configmap
+  namespace: open5gs-core
+data:
+  ue-lifecycle-edge1.yaml: |
+    supi: 'imsi-999700000000011'
+    mcc: '999'
+    mnc: '70'
+    key: '465B5CE8B199B49FAA5F0A2EE238A6BC'
+    op: 'E8ED289DEBA952E4283B54E88E6183CA'
+    opType: 'OPC'
+    amf: '8000'
+    imei: '356938035643811'
+    imeiSv: '4370816125816161'
+    gnbSearchList:
+      - gnb-edge1-service
+    uacAic:
+      mps: false
+      mcs: false
+    uacAcc:
+      normalClass: 0
+      class11: false
+      class12: false
+      class13: false
+      class14: false
+      class15: false
+    sessions:
+      - type: 'IPv4'
+        apn: 'edge1'
+        slice:
+          sst: 1
+          sd: 000002
+    configured-nssai:
+      - sst: 1
+        sd: 000002
+    default-nssai:
+      - sst: 1
+        sd: 000002
+    integrity:
+      IA1: true
+      IA2: true
+      IA3: true
+    ciphering:
+      EA1: true
+      EA2: true
+      EA3: true
+    integrityMaxRate:
+      uplink: 'full'
+      downlink: 'full'
+
+  ue-edge1-mobility.yaml: |
+    supi: 'imsi-999700000000011'
+    mcc: '999'
+    mnc: '70'
+    key: '465B5CE8B199B49FAA5F0A2EE238A6BC'
+    op: 'E8ED289DEBA952E4283B54E88E6183CA'
+    opType: 'OPC'
+    amf: '8000'
+    imei: '356938035643811'
+    imeiSv: '4370816125816161'
+    gnbSearchList:
+      - gnb-edge2-service
+    uacAic:
+      mps: false
+      mcs: false
+    uacAcc:
+      normalClass: 0
+      class11: false
+      class12: false
+      class13: false
+      class14: false
+      class15: false
+    sessions:
+      - type: 'IPv4'
+        apn: 'edge1'
+        slice:
+          sst: 1
+          sd: 000002
+    configured-nssai:
+      - sst: 1
+        sd: 000002
+    default-nssai:
+      - sst: 1
+        sd: 000002
+    integrity:
+      IA1: true
+      IA2: true
+      IA3: true
+    ciphering:
+      EA1: true
+      EA2: true
+      EA3: true
+    integrityMaxRate:
+      uplink: 'full'
+      downlink: 'full'
+
+  traffic.sh: |
+    #!/bin/bash
+    # Générateur de trafic data réaliste via interfaces TUN
+    # Profils : keepalive (ping), web léger (Wikipedia-like),
+    #           web lourd (Reddit/Twitter-like), streaming vidéo (YouTube-like)
+    SRV_LIGHT="192.168.57.5:8081"   # web léger  → port 8081
+    SRV_HEAVY="192.168.57.5:8082"   # web lourd  → port 8082
+    SRV_VIDEO="192.168.57.5:8083"   # streaming  → port 8083
+    LOG="/tmp/ue-traffic.log"
+
+    echo "[TRAFFIC] started at $(date -Is)" >> "$LOG"
+
+    while true; do
+        for tun in $(ip -o -4 addr show | awk '/uesimtun/ {print $2}'); do
+            (
+                profile=$(( RANDOM % 4 ))
+                case $profile in
+                    0)
+                        ping -I "$tun" -c 3 -W 1 8.8.8.8 >> "$LOG" 2>&1
+                        echo "[TRAFFIC] $(date -Is) tun=$tun profile=keepalive done" >> "$LOG"
+                        ;;
+                    1)
+                        curl --interface "$tun" -m 10 -s -o /dev/null \
+                          -w "[TRAFFIC] $(date -Is) tun=$tun profile=web_light code=%{http_code} size=%{size_download} speed=%{speed_download} time=%{time_total}\n" \
+                          "http://$SRV_LIGHT/small.bin" >> "$LOG" 2>&1
+                        ;;
+                    2)
+                        curl --interface "$tun" -m 20 -s -o /dev/null \
+                          -w "[TRAFFIC] $(date -Is) tun=$tun profile=web_heavy code=%{http_code} size=%{size_download} speed=%{speed_download} time=%{time_total}\n" \
+                          "http://$SRV_HEAVY/medium.bin" >> "$LOG" 2>&1
+                        ;;
+                    3)
+                        curl --interface "$tun" -m 45 -s -o /dev/null \
+                          -w "[TRAFFIC] $(date -Is) tun=$tun profile=video_like code=%{http_code} size=%{size_download} speed=%{speed_download} time=%{time_total}\n" \
+                          "http://$SRV_VIDEO/video.bin" >> "$LOG" 2>&1
+                        ;;
+                esac
+            ) &
+        done
+        sleep $(( RANDOM % 30 + 15 ))
+    done
+
+  lifecycle.sh: |
+    #!/bin/bash
+    # IMSIs edge1 : 011 à 030
+    BASE_IMSI=11
+    MAX_IMSI=30
+    CONFIG_NORMAL="/ueransim/config/ue-lifecycle-edge1.yaml"
+    CONFIG_MOBILITY="/ueransim/config/ue-edge1-mobility.yaml"
+    LOG="/tmp/nr-ue.log"
+
+    cleanup() {
+        echo "[LIFECYCLE] Arrêt propre — kill tous les nr-ue et traffic..."
+        pkill -TERM -f "/ueransim/nr-ue" 2>/dev/null || true
+        pkill -TERM -f "/ueransim/config/traffic.sh" 2>/dev/null || true
+        exit 0
+    }
+    trap cleanup SIGTERM SIGINT
+
+    ue_loop() {
+        local imsi_num=$1
+        local imsi=$(printf "imsi-99970000000%04d" $imsi_num)
+        local pid=""
+
+        local initial_delay=$(( RANDOM % 120 ))
+        echo "[LIFECYCLE] $imsi décalage initial=${initial_delay}s"
+        sleep "$initial_delay"
+
+        while true; do
+            local online_time=$(( RANDOM % 300 + 120 ))
+            local offline_time=$(( RANDOM % 90 + 10 ))
+            local jitter=$(( RANDOM % 30 ))
+
+            # 10% mobilité (gNB edge2), 90% normal (gNB edge1)
+            local config="$CONFIG_NORMAL"
+            local mode="normal"
+            if [ $(( RANDOM % 10 )) -eq 0 ]; then
+                config="$CONFIG_MOBILITY"
+                mode="mobility→edge2"
+            fi
+
+            /ueransim/nr-ue -c "$config" -i "$imsi" -n 1 >> "$LOG" 2>&1 &
+            pid=$!
+            echo "[LIFECYCLE] $imsi PID=$pid mode=$mode online=${online_time}s"
+
+            sleep "$online_time"
+
+            kill "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+            echo "[LIFECYCLE] $imsi arrêté offline=$((offline_time + jitter))s"
+
+            sleep $(( offline_time + jitter ))
+        done
+    }
+
+    echo "[LIFECYCLE] Démarrage de $(( MAX_IMSI - BASE_IMSI + 1 )) workers indépendants..."
+    for imsi_num in $(seq "$BASE_IMSI" "$MAX_IMSI"); do
+        ue_loop "$imsi_num" &
+    done
+
+    # Attendre que les premiers TUN soient up avant de lancer le trafic
+    echo "[LIFECYCLE] Attente des interfaces TUN..."
+    for i in $(seq 1 60); do
+        if ip -o -4 addr show 2>/dev/null | grep -q uesimtun; then
+            echo "[LIFECYCLE] TUN détecté — lancement du générateur de trafic"
+            break
+        fi
+        sleep 5
+    done
+
+    # Lance le générateur de trafic en arrière-plan
+    bash /ueransim/config/traffic.sh &
+
+    wait
+
+  wrapper.sh: |
+    #!/bin/bash
+    set -e
+    mkdir -p /dev/net
+    [ -e /dev/net/tun ] || mknod /dev/net/tun c 10 200
+    exec /bin/bash /ueransim/config/lifecycle.sh

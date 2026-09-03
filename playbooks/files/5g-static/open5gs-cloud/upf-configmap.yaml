@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: upf1-configmap
+  namespace: open5gs-cloud
+data:
+  upfcfg.yaml: |
+    logger:
+      file: 
+        path: /opt/open5gs/var/log/open5gs/upf.log
+      level: info
+
+    global:
+      max:
+        ue: 1024
+
+    upf:
+      pfcp:
+        server:
+          - dev: n4
+
+      gtpu:
+        server:
+          - dev: n3
+
+      session:
+        - subnet: 10.45.0.0/16
+          gateway: 10.45.0.1
+          dnn: internet
+
+      metrics:
+        server:
+          - address: 0.0.0.0
+            port: 9090
+
+  wrapper.sh: |
+    #!/bin/bash
+
+    mkdir -p /dev/net || true
+
+    ip tuntap add name ogstun mode tun || true
+    ip addr add 10.45.0.1/16 dev ogstun || true
+    ip link set ogstun up || true
+    echo 1 > /proc/sys/net/ipv4/ip_forward || true
+    iptables -t nat -C POSTROUTING -s 10.45.0.0/16 ! -o ogstun -j MASQUERADE 2>/dev/null || \
+    iptables -t nat -A POSTROUTING -s 10.45.0.0/16 ! -o ogstun -j MASQUERADE || true
+
+    exec open5gs-upfd -c /open5gs/config/upf.yaml

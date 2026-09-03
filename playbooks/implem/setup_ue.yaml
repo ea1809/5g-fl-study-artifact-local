@@ -1,0 +1,35 @@
+---
+- hosts: local
+  gather_facts: no
+  tasks:
+    - name: Récupérer le nom du pod ueransim-ues
+      command: kubectl get pods -n default -o name | grep ueransim-ues
+      register: ue_pod
+
+    - name: Copier le script sur le pod
+      community.kubernetes.k8s_cp:
+        namespace: default
+        pod: "{{ ue_pod.stdout | regex_replace('pod/', '') }}"
+        src: /home/vagrant/User_equipment_script/script
+        dest: /script
+
+    - name: Installer python3 et outils dans le pod
+      community.kubernetes.k8s_exec:
+        namespace: default
+        pod: "{{ ue_pod.stdout | regex_replace('pod/', '') }}"
+        command: >
+          bash -c "apt update -y &&
+                   DEBIAN_FRONTEND=noninteractive apt install -y tzdata &&
+                   ln -fs /usr/share/zoneinfo/Europe/Paris /etc/localtime &&
+                   dpkg-reconfigure -f noninteractive tzdata &&
+                   apt install -y python3 python3-scapy nano"
+
+    - name: Préparer script UE
+      community.kubernetes.k8s_exec:
+        namespace: default
+        pod: "{{ ue_pod.stdout | regex_replace('pod/', '') }}"
+        command: >
+          bash -c "cp ue.yaml /script &&
+                   cd /script &&
+                   bash create_ue_conf.sh &&
+                   mkdir -p ue-logs"

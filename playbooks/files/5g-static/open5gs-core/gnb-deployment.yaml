@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ueransim-gnb-edge1
+  namespace: open5gs-core
+  labels:
+    app: ueransim
+    component: gnb
+    name: gnb-edge1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ueransim
+      component: gnb
+      name: gnb-edge1
+  template:
+    metadata:
+      labels:
+        app: ueransim
+        component: gnb
+        name: gnb-edge1
+      annotations:
+        k8s.v1.cni.cncf.io/networks: '[
+          { "name": "n3network", "interface": "n3", "ips": [ "10.10.3.231/24" ] }
+        ]'
+    spec:
+      nodeSelector:
+        edge-role: edge
+      containers:
+        - name: gnb
+          image: ghcr.io/niloysh/ueransim:v3.2.6
+          ports:
+            - name: gnb-ue
+              containerPort: 4997
+              protocol: UDP
+          securityContext:
+            capabilities:
+              add: ["NET_ADMIN"]
+          command: ["/ueransim/config/wrapper.sh"]
+          volumeMounts:
+            - mountPath: /ueransim/config
+              name: gnb-volume
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      volumes:
+        - name: gnb-volume
+          configMap:
+            name: gnb-edge1-configmap
+            defaultMode: 0777
+            items:
+              - key: wrapper.sh
+                path: wrapper.sh

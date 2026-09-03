@@ -1,0 +1,102 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ue-edge2-03-configmap
+  namespace: open5gs-core
+data:
+  ue-edge2-03.yaml: |
+    supi: 'imsi-999700000000009'
+    mcc: '999'
+    mnc: '70'
+
+    key: '465B5CE8B199B49FAA5F0A2EE238A6BC'
+    op: 'E8ED289DEBA952E4283B54E88E6183CA'
+    opType: 'OPC'
+    amf: '8000'
+    imei: '356938035643809'
+    imeiSv: '4370816125816159'
+
+    gnbSearchList:
+      - gnb-edge2-service
+
+    uacAic:
+      mps: false
+      mcs: false
+
+    uacAcc:
+      normalClass: 0
+      class11: false
+      class12: false
+      class13: false
+      class14: false
+      class15: false
+
+    sessions:
+      - type: 'IPv4'
+        apn: 'edge2'
+        slice:
+          sst: 1
+          sd: 000002
+
+    configured-nssai:
+      - sst: 1
+        sd: 000002
+
+    default-nssai:
+      - sst: 1
+        sd: 000002
+
+    integrity:
+      IA1: true
+      IA2: true
+      IA3: true
+
+    ciphering:
+      EA1: true
+      EA2: true
+      EA3: true
+
+    integrityMaxRate:
+      uplink: 'full'
+      downlink: 'full'
+
+  wrapper.sh: |
+    #!/bin/bash
+    set -e
+
+    mkdir -p /dev/net
+    [ -e /dev/net/tun ] || mknod /dev/net/tun c 10 200
+
+    /ueransim/nr-ue -c /ueransim/config/ue-edge2-03.yaml &
+    UE_PID=$!
+
+    echo "[UE WRAPPER] Waiting for uesimtun0..."
+
+    for i in $(seq 1 60); do
+      ip link show uesimtun0 >/dev/null 2>&1 && break
+      sleep 1
+    done
+
+    if ! ip link show uesimtun0 >/dev/null 2>&1; then
+      echo "[UE WRAPPER] ERROR: uesimtun0 not found"
+      exit 1
+    fi
+
+    echo "[UE WRAPPER] uesimtun0 detected"
+
+    ETH_GW=$(ip route | awk '/default via .* dev eth0/ {print $3; exit}')
+
+    echo "[UE WRAPPER] ETH_GW=$ETH_GW"
+
+    if [ -n "$ETH_GW" ]; then
+      ip route replace 10.96.0.0/12 via "$ETH_GW" dev eth0
+      ip route replace 192.168.0.0/16 via "$ETH_GW" dev eth0
+      ip route replace 169.254.0.0/16 dev eth0
+    fi
+
+    ip route replace default dev uesimtun0
+
+    echo "[UE WRAPPER] Routing configured"
+    ip route
+
+    wait $UE_PID

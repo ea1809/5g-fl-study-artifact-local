@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ueransim-ue-cloud-02
+  namespace: open5gs-core
+  labels:
+    app: ueransim
+    component: ue
+    name: ue-cloud-02
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ueransim
+      component: ue
+      name: ue-cloud-02
+  template:
+    metadata:
+      labels:
+        app: ueransim
+        component: ue
+        name: ue-cloud-02
+    spec:
+      nodeSelector:
+        edge-role: edge
+      containers:
+        - name: ue
+          image: ueransim-iperf3:v3.2.6
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            capabilities:
+              add: ["NET_ADMIN"]
+          command: ["/bin/bash", "-c", "--"]
+          args:
+            - /ueransim/config/wrapper.sh
+          volumeMounts:
+            - mountPath: /ueransim/config
+              name: ue-volume
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      volumes:
+        - name: ue-volume
+          configMap:
+            name: ue-cloud-02-configmap
+            items:
+              - key: ue-cloud-02.yaml
+                path: ue-cloud-02.yaml
+              - key: wrapper.sh
+                path: wrapper.sh
+                mode: 0755

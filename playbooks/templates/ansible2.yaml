@@ -1,0 +1,36 @@
+- name: Generate and save cluster join command
+  command: kubeadm token create --print-join-command
+  register: join_cluster_command
+  when: install_calico_custom_resource is succeeded
+
+- name: Save join command to file
+  template:
+    src: joincluster.j2
+    dest: "{{ join_cluster_remote_src }}"
+  when: join_cluster_command is succeeded
+
+- name: Fetch joincluster into local file
+  fetch:
+    src: "{{ join_cluster_remote_src }}"
+    dest: files/joincluster
+    flat: yes
+- name: Worker Node Setup
+  hosts: worker_nodes
+  become: yes
+  become_method: sudo
+  gather_facts: yes
+  vars:
+    join_cluster_remote_src: /tmp/joincluster
+  tasks:
+    
+    - name: Copy the join command to server location
+      copy:
+        src: joincluster
+        dest: "{{ join_cluster_remote_src }}"
+        mode: 0777
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+    
+    - name: Join the node to cluster
+      command: sh {{ join_cluster_remote_src }}
+
