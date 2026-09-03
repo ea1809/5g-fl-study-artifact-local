@@ -12,11 +12,11 @@ The platform generates synchronized N3 and N4 observations around multiple UPFs 
 
 The testbed contains three virtual machines:
 
-| Vagrant machine | Kubernetes node | IP | Role |
-|---|---|---|---|
-| `master-open5gs-277` | `master-open5gs` | `192.168.57.5` | Kubernetes control plane |
-| `worker-open5gs-277-01` | `worker-open5gs-01` | `192.168.57.6` | Cloud / Edge 1 |
-| `worker-open5gs-277-02` | `worker-open5gs-02` | `192.168.57.7` | Edge 2 |
+| Vagrant machine         | Kubernetes node     | IP             | Role                     |
+| ----------------------- | ------------------- | -------------- | ------------------------ |
+| `master-open5gs-277`    | `master-open5gs`    | `192.168.57.5` | Kubernetes control plane |
+| `worker-open5gs-277-01` | `worker-open5gs-01` | `192.168.57.6` | Cloud / Edge 1           |
+| `worker-open5gs-277-02` | `worker-open5gs-02` | `192.168.57.7` | Edge 2                   |
 
 The Vagrant machine names and Kubernetes node names are intentionally different.
 
@@ -74,9 +74,22 @@ A cloud SMF/UPF pair is also deployed for the `internet` DNN.
 │   ├── network-attachments-all-ns.yaml
 │   └── orchestrator.sh
 ├── Vagrantfile
-├── ueransim-images-v3.2.6.tar
+├── .gitignore
 └── README.md
 ```
+
+Large generated or binary files are intentionally not tracked by Git.
+
+In particular:
+
+```text
+output/
+ueransim-images-v3.2.6.tar
+*.pcap
+*.pcapng
+```
+
+The UERANSIM image archive must therefore be obtained separately before running the image import step.
 
 The `old_ues/` directory contains legacy manifests and must **not** be deployed.
 
@@ -100,10 +113,10 @@ Guest OS            Ubuntu 20.04
 Vagrant             2.4.9
 Kubernetes          1.29.15
 Open5GS             2.7.7
-UERANSIM             3.2.6
-Helm                 3.x
-Container runtime    containerd
-CNI                  Calico + Multus + OVS-CNI
+UERANSIM            3.2.6
+Helm                3.x
+Container runtime   containerd
+CNI                 Calico + Multus + OVS-CNI
 ```
 
 Required host packages include:
@@ -190,11 +203,15 @@ MongoDB and `open5gs-dbctl` use their own images and therefore do not use the Op
 
 UERANSIM v3.2.6 is used.
 
-The custom images are supplied separately in:
+The custom images are supplied separately as:
 
 ```text
 ueransim-images-v3.2.6.tar
 ```
+
+The archive is not stored in this Git repository because of its size.
+
+Before continuing with the UERANSIM image import step, place the archive in the repository root.
 
 The archive contains:
 
@@ -257,16 +274,12 @@ worker-open5gs-02
 
 # 5. Verify VM connectivity
 
-From the host:
+From the host, verify that each VM is accessible through Vagrant.
+
+Master:
 
 ```bash
 vagrant ssh master-open5gs-277
-```
-
-Exit:
-
-```bash
-exit
 ```
 
 Worker 1:
@@ -281,19 +294,28 @@ Worker 2:
 vagrant ssh worker-open5gs-277-02
 ```
 
-The private IP addresses are:
+Exit each VM with:
 
-```text
-master   192.168.57.5
-worker1  192.168.57.6
-worker2  192.168.57.7
+```bash
+exit
 ```
 
 ---
 
 # 6. Copy the experiment files to the master
 
-From the **host**, at the repository root:
+From the **host**, at the repository root, remove any previous copy before transferring the current artifact files.
+
+This avoids keeping stale or duplicated files from an earlier deployment:
+
+```bash
+ssh \
+  -i .vagrant/machines/master-open5gs-277/libvirt/private_key \
+  vagrant@192.168.57.5 \
+  "rm -rf /home/vagrant/vm-files"
+```
+
+Copy the current `vm-files` directory:
 
 ```bash
 scp -r \
@@ -581,6 +603,22 @@ kubectl get pods \
 
 One OVS-CNI pod should run on each worker.
 
+Verify that the OVS CNI binary has actually been installed on both workers.
+
+On Worker 1:
+
+```bash
+sudo test -x /opt/cni/bin/ovs && echo "OVS CNI OK"
+```
+
+On Worker 2:
+
+```bash
+sudo test -x /opt/cni/bin/ovs && echo "OVS CNI OK"
+```
+
+Do not deploy Open5GS until this check succeeds.
+
 ---
 
 # 14. Deploy the secondary N2/N3/N4 networks
@@ -624,6 +662,14 @@ n4network
 # 15. Import UERANSIM images
 
 The custom UERANSIM images must be imported into **both workers**.
+
+First, verify from the host that the separately provided archive is available in the repository root:
+
+```bash
+ls -lh ueransim-images-v3.2.6.tar
+```
+
+Do not continue until this file is available.
 
 From the host, copy the archive to Worker 1:
 
@@ -685,9 +731,9 @@ ghcr.io/niloysh/ueransim:v3.2.6
 
 ---
 
-# 16. Deploy Open5GS v2.7.7
+# 16. Deploy Open5GS and edge resources
 
-From the **host**:
+From the **host**, deploy Open5GS:
 
 ```bash
 ansible-playbook \
@@ -695,7 +741,7 @@ ansible-playbook \
   playbooks/open5gs-playbook.yaml
 ```
 
-Then deploy the edge resources:
+Then deploy the edge and UERANSIM resources:
 
 ```bash
 ansible-playbook \
@@ -733,17 +779,17 @@ Open5GS network functions should use version:
 
 ---
 
-# 17. Register subscribers
+# 17. Register Open5GS subscribers
 
 The experiment uses **50 subscribers**.
 
 The distribution is:
 
-| IMSI | DNN | Site |
-|---|---|---|
-| 1–10 | `internet` | Cloud |
-| 11–30 | `edge1` | Edge 1 |
-| 31–50 | `edge2` | Edge 2 |
+| IMSI  | DNN        | Site   |
+| ----- | ---------- | ------ |
+| 1–10  | `internet` | Cloud  |
+| 11–30 | `edge1`    | Edge 1 |
+| 31–50 | `edge2`    | Edge 2 |
 
 Retrieve the MongoDB pod:
 
@@ -754,15 +800,7 @@ MONGOPOD=$(kubectl get pods \
   | awk '{print $1}')
 ```
 
-The subscriber credentials are:
-
-```text
-K   = 465B5CE8B199B49FAA5F0A2EE238A6BC
-OPc = E8ED289DEBA952E4283B54E88E6183CA
-AMF = 8000
-```
-
-Before inserting a new test population, make sure an old population is not already present:
+Before inserting the subscribers, check the current database:
 
 ```bash
 kubectl exec \
@@ -773,13 +811,167 @@ kubectl exec \
   --eval 'db.subscribers.countDocuments()'
 ```
 
-The final database must contain:
+If an old test population is already present, remove it before recreating the validated 50-subscriber population:
 
-```text
-50
+```bash
+kubectl exec \
+  -n open5gs-core \
+  "$MONGOPOD" \
+  -- mongosh open5gs \
+  --quiet \
+  --eval 'db.subscribers.deleteMany({})'
 ```
 
-The active configuration uses:
+Insert the 50 subscribers:
+
+```bash
+kubectl exec -n open5gs-core "$MONGOPOD" -- mongosh open5gs --eval '
+for (let i = 11; i <= 30; i++) {
+  let imsi = "99970000000" + String(i).padStart(4, "0");
+  db.subscribers.insertOne({
+    imsi: imsi,
+    msisdn: [],
+    imeisv: "4370816125816161",
+    mme_host: [],
+    mme_realm: [],
+    purge_flag: [],
+    security: {
+      k: "465B5CE8B199B49FAA5F0A2EE238A6BC",
+      op: null,
+      opc: "E8ED289DEBA952E4283B54E88E6183CA",
+      amf: "8000"
+    },
+    ambr: {
+      downlink: { value: 1, unit: 3 },
+      uplink: { value: 1, unit: 3 }
+    },
+    slice: [{
+      sst: 1,
+      sd: "000002",
+      default_indicator: true,
+      session: [{
+        name: "edge1",
+        type: 3,
+        ambr: {
+          downlink: { value: 1, unit: 3 },
+          uplink: { value: 1, unit: 3 }
+        },
+        qos: {
+          index: 9,
+          arp: {
+            priority_level: 8,
+            pre_emption_capability: 1,
+            pre_emption_vulnerability: 1
+          }
+        }
+      }]
+    }],
+    access_restriction_data: 32,
+    subscriber_status: 0,
+    network_access_mode: 0,
+    subscribed_rau_tau_timer: 12
+  });
+}
+
+for (let i = 31; i <= 50; i++) {
+  let imsi = "99970000000" + String(i).padStart(4, "0");
+  db.subscribers.insertOne({
+    imsi: imsi,
+    msisdn: [],
+    imeisv: "4370816125816181",
+    mme_host: [],
+    mme_realm: [],
+    purge_flag: [],
+    security: {
+      k: "465B5CE8B199B49FAA5F0A2EE238A6BC",
+      op: null,
+      opc: "E8ED289DEBA952E4283B54E88E6183CA",
+      amf: "8000"
+    },
+    ambr: {
+      downlink: { value: 1, unit: 3 },
+      uplink: { value: 1, unit: 3 }
+    },
+    slice: [{
+      sst: 1,
+      sd: "000002",
+      default_indicator: true,
+      session: [{
+        name: "edge2",
+        type: 3,
+        ambr: {
+          downlink: { value: 1, unit: 3 },
+          uplink: { value: 1, unit: 3 }
+        },
+        qos: {
+          index: 9,
+          arp: {
+            priority_level: 8,
+            pre_emption_capability: 1,
+            pre_emption_vulnerability: 1
+          }
+        }
+      }]
+    }],
+    access_restriction_data: 32,
+    subscriber_status: 0,
+    network_access_mode: 0,
+    subscribed_rau_tau_timer: 12
+  });
+}
+
+for (let i = 1; i <= 10; i++) {
+  let imsi = "99970000000" + String(i).padStart(4, "0");
+  db.subscribers.insertOne({
+    imsi: imsi,
+    msisdn: [],
+    imeisv: "4370816125816151",
+    mme_host: [],
+    mme_realm: [],
+    purge_flag: [],
+    security: {
+      k: "465B5CE8B199B49FAA5F0A2EE238A6BC",
+      op: null,
+      opc: "E8ED289DEBA952E4283B54E88E6183CA",
+      amf: "8000"
+    },
+    ambr: {
+      downlink: { value: 1, unit: 3 },
+      uplink: { value: 1, unit: 3 }
+    },
+    slice: [{
+      sst: 1,
+      sd: "000001",
+      default_indicator: true,
+      session: [{
+        name: "internet",
+        type: 3,
+        ambr: {
+          downlink: { value: 1, unit: 3 },
+          uplink: { value: 1, unit: 3 }
+        },
+        qos: {
+          index: 9,
+          arp: {
+            priority_level: 8,
+            pre_emption_capability: 1,
+            pre_emption_vulnerability: 1
+          }
+        }
+      }]
+    }],
+    access_restriction_data: 32,
+    subscriber_status: 0,
+    network_access_mode: 0,
+    subscribed_rau_tau_timer: 12
+  });
+}
+
+print("Total: " + db.subscribers.countDocuments());
+'
+```
+
+The active configuration is:
 
 ```text
 IMSI 1-10:
@@ -795,7 +987,7 @@ IMSI 31-50:
   DNN     = edge2
 ```
 
-Verify:
+Verify the final subscriber count:
 
 ```bash
 kubectl exec \
@@ -921,7 +1113,9 @@ The same check can be performed for Edge 2.
 
 ---
 
-# 20. HTTP traffic services
+# 20. Configure HTTP traffic services
+
+Run the HTTP service installation commands on the **master**.
 
 Three HTTP services are hosted on the master:
 
@@ -1029,7 +1223,7 @@ SRV_HEAVY="192.168.57.5:8082"
 SRV_VIDEO="192.168.57.5:8083"
 ```
 
-Verify:
+From the **host**, at the repository root, verify the UE traffic configuration:
 
 ```bash
 grep -R \
@@ -1037,7 +1231,7 @@ grep -R \
   playbooks/files/5g-static/open5gs-core/ue-lifecycle-edge*-configmap.yaml
 ```
 
-Verify UE-generated HTTP traffic:
+From the **master**, verify UE-generated HTTP traffic:
 
 ```bash
 kubectl exec \
@@ -1288,9 +1482,14 @@ Expected:
 On the master:
 
 ```bash
-mkdir -p \
-  ~/orchestrator
+mkdir -p ~/orchestrator
+
+rm -rf \
+  ~/orchestrator/scenarios \
+  ~/orchestrator/attacks
 ```
+
+Removing the previous `scenarios/` and `attacks/` directories prevents obsolete or duplicated scripts from an earlier deployment from remaining in the orchestrator.
 
 Copy the orchestrator:
 
@@ -1507,7 +1706,7 @@ The N3 capture uses a reduced packet snapshot length to limit storage usage.
 
 # 27. Validate a completed run
 
-Check the labels:
+Check that the recorded experiment events match the scenario:
 
 ```bash
 cat \
@@ -1562,6 +1761,8 @@ N3 should contain GTP-U encapsulated UE traffic and the configured attack traffi
 # 28. Copy experiment results to the host
 
 Run these commands from the **host**, from the repository root.
+
+The `output/` directory contains generated experiment results and is not tracked by Git.
 
 Create the output directory:
 
@@ -1750,6 +1951,17 @@ kubectl exec \
 
 ## UE tunnels
 
+Retrieve the Edge 1 UE pod again so that the final checks do not depend on a previously defined shell variable:
+
+```bash
+UEPOD=$(kubectl get pods \
+  -n open5gs-core \
+  -l component=ue-lifecycle,edge=edge1 \
+  -o jsonpath='{.items[0].metadata.name}')
+```
+
+Check the UE tunnels:
+
 ```bash
 kubectl exec \
   -n open5gs-core \
@@ -1770,7 +1982,6 @@ kubectl exec \
 ```
 
 ---
-
 
 # Experiment output validated with Open5GS v2.7.7
 
